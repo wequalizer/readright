@@ -97,4 +97,16 @@ registry = SourceRegistry()
 
 def auto_register() -> None:
     """Import all built-in parsers to trigger registration."""
-    from envelope.sources import bank_ing, bank_rabo, whatsapp, csv_generic  # noqa: F401
+    import importlib
+    import pkgutil
+
+    from envelope import sources
+
+    # Auto-discover all parser modules — no manual list needed
+    for _importer, modname, _ispkg in pkgutil.iter_modules(sources.__path__):
+        if modname.startswith("_"):
+            continue
+        try:
+            importlib.import_module(f"envelope.sources.{modname}")
+        except Exception:
+            pass  # Skip parsers with missing optional deps (e.g., openpyxl)

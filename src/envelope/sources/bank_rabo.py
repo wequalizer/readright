@@ -23,14 +23,8 @@ class RabobankParser(BaseParser):
     - IBAN fields use 'IBAN/BBAN' naming
     """
 
-    HEADERS_NEW = {
-        "IBAN/BBAN", "Munt", "BIC", "Volgnr", "Datum", "Rentedatum",
-        "Bedrag", "Saldo na trn", "Tegenrekening IBAN/BBAN",
-        "Naam tegenpartij", "Naam uiteindelijke partij",
-        "Naam initiërende partij", "BIC tegenpartij",
-        "Code", "Batch ID", "Transactiereferentie", "Machtigingskenmerk",
-        "Incassant ID", "Betalingskenmerk", "Omschrijving-1",
-    }
+    # Rabobank has 26 columns in current format (2024+)
+    DETECT_HEADERS = {"IBAN/BBAN", "Bedrag", "Saldo na trn", "Naam tegenpartij"}
 
     def source_type(self) -> str:
         return "rabobank_csv_nl"
@@ -42,10 +36,8 @@ class RabobankParser(BaseParser):
         if not filename.lower().endswith(".csv"):
             return 0.0
 
-        encoding = self.detect_encoding(content)
-        try:
-            text = content.decode(encoding)
-        except (UnicodeDecodeError, LookupError):
+        text = self._decode(content)
+        if text is None:
             return 0.0
 
         first_line = text.split("\n")[0].strip()
@@ -54,7 +46,7 @@ class RabobankParser(BaseParser):
             return 0.95
         if "Naam tegenpartij" in first_line and "Bedrag" in first_line:
             return 0.85
-        if "Rabobank" in first_line.lower():
+        if "RABO" in first_line.upper():
             return 0.70
 
         return 0.0
@@ -86,20 +78,14 @@ class RabobankParser(BaseParser):
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
-        encoding = self.detect_encoding(content)
-        try:
-            text = content.decode(encoding)
-        except (UnicodeDecodeError, LookupError):
-            for enc in ["latin-1", "cp1252", "utf-8-sig"]:
-                try:
-                    text = content.decode(enc)
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    continue
-            else:
-                return ParseResult(success=False, error="Could not decode file encoding")
+        text = self._decode(content)
+        if text is None:
+            return ParseResult(success=False, error="Could not decode file encoding")
 
-        # Rabobank uses semicolon delimiter
+        # Strip BOM
+        text = text.lstrip("\ufeff")
+
+        # Rabobank can use semicolon OR comma as delimiter
         first_line = text.split("\n")[0]
         delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
 
@@ -132,8 +118,16 @@ class RabobankParser(BaseParser):
         raw_date = row.get("Datum", "").strip()
         tx_date = self._parse_date(raw_date)
 
-        # Parse amount — comma decimal, already signed
-        raw_amount = row.get("Bedrag", "0").strip().replace(".", "").replace(",", ".")
+        # Parse amount — comma decimal, already signed, may have explicit +/- prefix
+        raw_amount = row.get("Bedrag", "0").strip()
+        # Remove thousand separators (dots) but keep the sign and comma decimal
+        # Rabo format: "+40,70" or "-76,05" or "1.234,56"
+        sign = ""
+        if raw_amount.startswith(("+", "-")):
+            sign = raw_amount[0]
+            raw_amount = raw_amount[1:]
+        raw_amount = raw_amount.replace(".", "").replace(",", ".")
+        raw_amount = sign + raw_amount
         try:
             amount = Decimal(raw_amount)
         except InvalidOperation:
@@ -141,11 +135,19 @@ class RabobankParser(BaseParser):
 
         is_debit = amount < 0
 
-        # Balance
-        raw_balance = row.get("Saldo na trn", "").strip().replace(".", "").replace(",", ".")
-        try:
-            balance = Decimal(raw_balance) if raw_balance else None
-        except InvalidOperation:
+        # Balance — same format
+        raw_balance = row.get("Saldo na trn", "").strip()
+        if raw_balance:
+            bal_sign = ""
+            if raw_balance.startswith(("+", "-")):
+                bal_sign = raw_balance[0]
+                raw_balance = raw_balance[1:]
+            raw_balance = bal_sign + raw_balance.replace(".", "").replace(",", ".")
+            try:
+                balance = Decimal(raw_balance)
+            except InvalidOperation:
+                balance = None
+        else:
             balance = None
 
         # Combine description fields
@@ -168,6 +170,15 @@ class RabobankParser(BaseParser):
             "account_iban": row.get("IBAN/BBAN", "").strip(),
             "reference": row.get("Transactiereferentie", "").strip(),
         }
+
+    def _decode(self, content: bytes) -> str | None:
+        """Try multiple encodings common for Dutch bank exports."""
+        for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:
+            try:
+                return content.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return None
 
     def _parse_date(self, raw: str) -> date | str:
         """Parse date from various Rabobank formats."""
