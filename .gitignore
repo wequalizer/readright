@@ -3,6 +3,27 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.env
 *.egg
 .ruff_cache/
+
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+*.secret
+credentials*
+
+# Internal — not open source
+api/
+FINANCIAL_ADMIN.md
+BUSINESS_PLAN.md
+PARSER_DEMAND_RESEARCH.md
+
+# IDE
+.claude/
+.vscode/
+.idea/
+screenshot-*.png
+launch-posts.md
+outreach-plan.md
