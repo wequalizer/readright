@@ -98,7 +98,7 @@ class RabobankParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row)
+                parsed = self._parse_row(row, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -113,13 +113,14 @@ class RabobankParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _parse_row(self, row: dict) -> dict:
+    def _parse_row(self, row: dict, warnings: list) -> dict:
         # Parse date — try multiple formats
         raw_date = row.get("Datum", "").strip()
         tx_date = self._parse_date(raw_date)
 
         # Parse amount — comma decimal, already signed, may have explicit +/- prefix
-        raw_amount = row.get("Bedrag", "0").strip()
+        raw_amount_orig = row.get("Bedrag", "0").strip()
+        raw_amount = raw_amount_orig
         # Remove thousand separators (dots) but keep the sign and comma decimal
         # Rabo format: "+40,70" or "-76,05" or "1.234,56"
         sign = ""
@@ -130,13 +131,15 @@ class RabobankParser(BaseParser):
         raw_amount = sign + raw_amount
         try:
             amount = Decimal(raw_amount)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse amount '{raw_amount_orig}', defaulting to 0")
             amount = Decimal("0")
 
         is_debit = amount < 0
 
         # Balance — same format
-        raw_balance = row.get("Saldo na trn", "").strip()
+        raw_balance_orig = row.get("Saldo na trn", "").strip()
+        raw_balance = raw_balance_orig
         if raw_balance:
             bal_sign = ""
             if raw_balance.startswith(("+", "-")):
@@ -145,7 +148,8 @@ class RabobankParser(BaseParser):
             raw_balance = bal_sign + raw_balance.replace(".", "").replace(",", ".")
             try:
                 balance = Decimal(raw_balance)
-            except InvalidOperation:
+            except (InvalidOperation, Exception):
+                warnings.append(f"Row {len(warnings)+1}: could not parse balance '{raw_balance_orig}', defaulting to None")
                 balance = None
         else:
             balance = None

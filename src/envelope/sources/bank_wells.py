@@ -182,7 +182,7 @@ class WellsFargoParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row, has_header)
+                parsed = self._parse_row(row, has_header, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -212,14 +212,14 @@ class WellsFargoParser(BaseParser):
             return False
         return False
 
-    def _parse_row(self, row: dict, has_header: bool) -> dict:
+    def _parse_row(self, row: dict, has_header: bool, warnings: list | None = None) -> dict:
         if has_header:
             # Header variant: column names vary, use best guesses
             date_key = next((k for k in row if "date" in k.lower()), None)
             amount_key = next((k for k in row if "amount" in k.lower()), None)
             desc_key = next((k for k in row if "description" in k.lower()), None)
             raw_date = (row.get(date_key, "") if date_key else "").strip().strip('"')
-            raw_amount = (row.get(amount_key, "0") if amount_key else "0").strip().strip('"')
+            raw_amount_orig = (row.get(amount_key, "0") if amount_key else "0").strip().strip('"')
             raw_desc = (row.get(desc_key, "") if desc_key else "").strip().strip('"')
             # WF code columns: anything left
             keys = list(row.keys())
@@ -227,17 +227,19 @@ class WellsFargoParser(BaseParser):
             wf_code_2 = row.get(keys[3], "").strip().strip('"') if len(keys) > 3 else None
         else:
             raw_date = row.get("date", "").strip().strip('"')
-            raw_amount = row.get("amount", "0").strip().strip('"')
+            raw_amount_orig = row.get("amount", "0").strip().strip('"')
             raw_desc = row.get("description", "").strip().strip('"')
             wf_code_1 = row.get("wf_code_1", "").strip().strip('"') or None
             wf_code_2 = row.get("wf_code_2", "").strip().strip('"') or None
 
         tx_date = self._parse_date(raw_date)
 
-        raw_amount = raw_amount.replace(",", "")
+        raw_amount = raw_amount_orig.replace(",", "")
         try:
             amount = Decimal(raw_amount)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            if warnings is not None:
+                warnings.append(f"Row {len(warnings)+1}: could not parse amount '{raw_amount_orig}', defaulting to 0")
             amount = Decimal("0")
 
         is_debit = amount < 0

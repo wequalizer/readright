@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -234,6 +237,11 @@ class RevolutParser(BaseParser):
                 "REVERTED transactions have a matching COMPLETED transaction — both appear in the export. Net effect is zero but both rows are present.",
                 "State 'PENDING' means the transaction is not yet settled — do not include in finalized accounting.",
             ],
+            notes=[
+                "Multi-currency accounts show each transaction in its original currency, not converted to a home currency.",
+                "FX transactions generate two rows showing both currencies with the applied exchange rate.",
+                "Pending transactions have no completed_at timestamp — use started_at as the only available date.",
+            ],
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
@@ -410,8 +418,8 @@ class RevolutParser(BaseParser):
             raw = raw.replace(",", ".")
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"Revolut: could not parse amount '{raw}'")
 
     def _decode(self, content: bytes) -> str | None:
         for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:

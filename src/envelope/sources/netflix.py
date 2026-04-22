@@ -4,10 +4,34 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+from datetime import datetime
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
 from envelope.registry import registry
+
+# Netflix date formats by locale
+_DATE_FORMATS = [
+    ("%m/%d/%Y", re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")),     # US: M/DD/YYYY
+    ("%d/%m/%Y", re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")),     # EU: DD/MM/YYYY (same shape, tried second)
+    ("%d-%m-%Y", re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$")),     # EU alt
+    ("%Y-%m-%d", re.compile(r"^\d{4}-\d{2}-\d{2}$")),         # ISO (already normalized)
+]
+
+
+def _normalize_date(raw: str) -> str:
+    """Normalize Netflix date string to YYYY-MM-DD. Returns raw if unparseable."""
+    raw = raw.strip()
+    if not raw:
+        return raw
+    for fmt, pattern in _DATE_FORMATS:
+        if pattern.match(raw):
+            try:
+                return datetime.strptime(raw, fmt).date().isoformat()
+            except ValueError:
+                continue
+    return raw
 
 
 class NetflixViewingParser(BaseParser):
@@ -98,7 +122,7 @@ class NetflixViewingParser(BaseParser):
 
             rows.append({
                 "title": title,
-                "date": date_val,
+                "date": _normalize_date(date_val),
             })
 
         if not rows:
@@ -111,13 +135,7 @@ class NetflixViewingParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _decode(self, content: bytes) -> str | None:
-        for enc in ["utf-8-sig", "utf-8", "latin-1"]:
-            try:
-                return content.decode(enc)
-            except (UnicodeDecodeError, LookupError):
-                continue
-        return None
+    # _decode() inherited from BaseParser
 
 
 registry.register(NetflixViewingParser())

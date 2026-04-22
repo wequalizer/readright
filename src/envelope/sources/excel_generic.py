@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
@@ -119,10 +118,12 @@ class ExcelGenericParser(BaseParser):
             source_label=self.source_label(),
             fields=[],
             conventions=[
-                "Header row is auto-detected as the first row with multiple non-empty string cells.",
+                "Only the first sheet is parsed by default — additional sheets are ignored.",
+                "Header row is auto-detected as the first row with mostly non-empty string cells.",
+                "Merged cells may cause unexpected or duplicated values — inspect output carefully.",
+                "Date cells are converted to ISO 8601 strings (YYYY-MM-DD or full datetime).",
+                "Formula cells show computed/cached values, not the formula expressions themselves.",
                 "Column types are inferred from data values — verify before relying on types.",
-                "Only the first worksheet is parsed. Multi-sheet files need a custom parser.",
-                "Dates are normalized to ISO 8601 (YYYY-MM-DD or full datetime).",
                 "Only .xlsx format is supported. For .xls (legacy), convert to .xlsx first.",
                 "openpyxl must be installed: pip install openpyxl",
             ],

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -134,12 +135,20 @@ class INGBankParser(BaseParser):
             if clean in COLUMN_MAP:
                 col_lookup[COLUMN_MAP[clean]] = header
 
+        # Detect Dutch-format amounts from headers: if we found the Dutch
+        # "Bedrag (EUR)" header, amounts use comma as decimal separator and
+        # dot as thousands separator.
+        dutch_format = any(
+            h.strip().strip('"') in ("Bedrag (EUR)", "Saldo na mutatie")
+            for h in (reader.fieldnames or [])
+        )
+
         rows = []
         warnings = []
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row, col_lookup)
+                parsed = self._parse_row(row, col_lookup, warnings, dutch_format=dutch_format)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -162,7 +171,46 @@ class INGBankParser(BaseParser):
             return default
         return row.get(header, default).strip()
 
-    def _parse_row(self, row: dict, col_lookup: dict) -> dict:
+    def _parse_amount(self, raw: str, dutch_format: bool = False) -> Decimal:
+        """Parse amount handling both Dutch (comma decimal) and English (dot decimal) formats.
+
+        Handles thousand separators correctly:
+        - Dutch: 3.500,00 → 3500.00
+        - Dutch whole thousands: 1.234 → 1234 (dot is thousands separator)
+        - English: 3,500.00 → 3500.00
+        - Simple comma decimal: 40,70 → 40.70
+
+        When dutch_format=True (detected from Dutch headers), dots without
+        any comma are treated as thousands separators, not decimal points.
+        This prevents e.g. "1.234" being parsed as 1.234 instead of 1234.
+        """
+        raw = raw.strip().strip('"')
+        if not raw or raw == "-":
+            return Decimal("0")
+        # Remove currency symbols/spaces
+        raw = raw.replace("€", "").replace("EUR", "").strip()
+        if "," in raw and "." in raw:
+            if raw.rfind(",") > raw.rfind("."):
+                # Dutch: 1.234,56
+                raw = raw.replace(".", "").replace(",", ".")
+            else:
+                # English: 1,234.56
+                raw = raw.replace(",", "")
+        elif "," in raw:
+            raw = raw.replace(",", ".")
+        elif dutch_format and "." in raw:
+            # Dutch format with only dots — dots are thousands separators.
+            # e.g. "1.234" = 1234, "10.000" = 10000
+            # A real decimal amount in Dutch always uses comma, so a dot-only
+            # value in a Dutch-header file is always a thousands separator.
+            if re.match(r'^-?\d{1,3}(\.\d{3})+$', raw):
+                raw = raw.replace(".", "")
+        try:
+            return Decimal(raw)
+        except Exception:
+            raise ValueError(f"ING: could not parse amount '{raw}'")
+
+    def _parse_row(self, row: dict, col_lookup: dict, warnings: list, dutch_format: bool = False) -> dict:
         """Parse a single ING CSV row into normalized format."""
         # Parse date: YYYYMMDD → date
         raw_date = self._get(row, col_lookup, "date")
@@ -172,10 +220,11 @@ class INGBankParser(BaseParser):
             tx_date = raw_date
 
         # Parse amount: always positive in ING, comma decimal
-        raw_amount = self._get(row, col_lookup, "amount", "0").replace(",", ".")
+        raw_amount_str = self._get(row, col_lookup, "amount", "0")
         try:
-            amount = Decimal(raw_amount)
-        except InvalidOperation:
+            amount = self._parse_amount(raw_amount_str, dutch_format=dutch_format)
+        except ValueError:
+            warnings.append(f"CORRUPT AMOUNT: could not parse '{raw_amount_str}', row kept with amount=0")
             amount = Decimal("0")
 
         # Direction: "Af"/"Debit" = debit (out), "Bij"/"Credit" = credit (in)
@@ -185,10 +234,11 @@ class INGBankParser(BaseParser):
             amount = -amount
 
         # Balance after
-        raw_balance = self._get(row, col_lookup, "balance_after").replace(",", ".")
+        raw_balance_str = self._get(row, col_lookup, "balance_after")
         try:
-            balance = Decimal(raw_balance) if raw_balance else None
-        except InvalidOperation:
+            balance = self._parse_amount(raw_balance_str, dutch_format=dutch_format) if raw_balance_str else None
+        except ValueError:
+            warnings.append(f"CORRUPT BALANCE: could not parse '{raw_balance_str}', row kept with balance=None")
             balance = None
 
         return {

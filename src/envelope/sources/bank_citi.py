@@ -148,7 +148,7 @@ class CitibankParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row)
+                parsed = self._parse_row(row, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -163,7 +163,7 @@ class CitibankParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _parse_row(self, row: dict) -> dict:
+    def _parse_row(self, row: dict, warnings: list) -> dict:
         # Normalize keys
         row = {k.strip().strip('"') if k else k: (v.strip().strip('"') if v else "")
                for k, v in row.items() if k}
@@ -173,17 +173,21 @@ class CitibankParser(BaseParser):
         tx_date = self._parse_date(raw_date)
 
         # Debit and Credit columns — both are positive numbers; only one is populated
-        raw_debit = row.get("Debit", "").replace(",", "")
-        raw_credit = row.get("Credit", "").replace(",", "")
+        raw_debit_orig = row.get("Debit", "")
+        raw_debit = raw_debit_orig.replace(",", "")
+        raw_credit_orig = row.get("Credit", "")
+        raw_credit = raw_credit_orig.replace(",", "")
 
         try:
             debit = Decimal(raw_debit) if raw_debit else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse debit '{raw_debit_orig}', defaulting to None")
             debit = None
 
         try:
             credit = Decimal(raw_credit) if raw_credit else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse credit '{raw_credit_orig}', defaulting to None")
             credit = None
 
         # Determine direction and signed amount

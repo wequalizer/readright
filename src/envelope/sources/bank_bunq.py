@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -200,6 +203,11 @@ class BunqParser(BaseParser):
                 "Currency is almost always EUR for NL accounts; Bunq supports multi-currency pockets which export with their own currency.",
                 "Bunq auto-categories in the CSV may differ from what is shown in the app (app uses ML, export may lag).",
             ],
+            notes=[
+                "Bunq is a Dutch neobank — most users are NL-based and exports reflect Dutch banking conventions.",
+                "The Interest Date (valutadatum) can differ from the booking date, affecting interest calculations.",
+                "Sub-types include payment request flows (Tikkie-style) which appear as regular incoming transfers.",
+            ],
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
@@ -321,8 +329,8 @@ class BunqParser(BaseParser):
             raw = raw.replace(",", ".")
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"Bunq: could not parse amount '{raw}'")
 
     def _decode(self, content: bytes) -> str | None:
         for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:

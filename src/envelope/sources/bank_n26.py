@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -298,7 +301,10 @@ class N26Parser(BaseParser):
 
         # Main amount: EUR, dot decimal, already signed
         raw_amount = self._get(row, col_lookup, "amount", "0")
-        amount = self._parse_amount(raw_amount)
+        try:
+            amount = self._parse_amount(raw_amount)
+        except ValueError as e:
+            raise ValueError(f"Amount parse error: {e}")
         is_debit = amount < 0
 
         # Foreign currency columns
@@ -358,8 +364,8 @@ class N26Parser(BaseParser):
             raw = raw.replace(",", ".")
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"N26: could not parse amount '{raw}'")
 
     def _decode(self, content: bytes) -> str | None:
         for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:

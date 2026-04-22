@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
@@ -186,8 +186,8 @@ class OFXParser(BaseParser):
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
         try:
-            text = content.decode("utf-8", errors="replace")
-        except Exception:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
             text = content.decode("latin-1", errors="replace")
 
         # Strip OFX 1.x plain-text headers (everything before the blank line before <OFX>)
@@ -214,7 +214,7 @@ class OFXParser(BaseParser):
 
         for i, block in enumerate(blocks):
             try:
-                row = self._parse_transaction(block, currency, account_id)
+                row = self._parse_transaction(block, currency, account_id, warnings)
                 rows.append(row)
             except Exception as e:
                 warnings.append(f"Transaction {i + 1}: {e}")
@@ -229,11 +229,14 @@ class OFXParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _parse_transaction(self, block: str, currency: str, account_id: str | None) -> dict:
-        raw_amount = _extract_tag(block, "TRNAMT").replace(",", ".")
+    def _parse_transaction(self, block: str, currency: str, account_id: str | None, warnings: list | None = None) -> dict:
+        raw_amount_orig = _extract_tag(block, "TRNAMT")
+        raw_amount = raw_amount_orig.replace(",", ".")
         try:
             amount = Decimal(raw_amount)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            if warnings is not None:
+                warnings.append(f"Could not parse TRNAMT '{raw_amount_orig}', defaulting to 0")
             amount = Decimal("0")
 
         trntype_raw = _extract_tag(block, "TRNTYPE").upper()

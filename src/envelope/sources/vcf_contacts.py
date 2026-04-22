@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -223,7 +222,6 @@ class VCFParser(BaseParser):
 
     def _parse_vcard(self, block: str) -> dict:
         """Parse a single vCard block (content after BEGIN:VCARD)."""
-        import json
 
         # Strip END:VCARD
         block = re.sub(r"END:VCARD.*", "", block, flags=re.IGNORECASE)

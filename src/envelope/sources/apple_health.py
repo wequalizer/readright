@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-try:
-    import defusedxml.ElementTree as ET
-except ImportError:
-    import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime
 

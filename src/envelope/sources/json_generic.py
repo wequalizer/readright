@@ -51,6 +51,11 @@ class GenericJSONParser(BaseParser):
             fields=[],
             conventions=[
                 "This is a generic JSON parse. Field types are inferred from values.",
+                "Nested objects are flattened with dot notation (e.g. parent.child becomes a column).",
+                "Arrays within objects are JSON-stringified into a single string value.",
+                "null values are preserved as null (not converted to empty string during inference).",
+                "Top-level arrays of objects are treated as rows — each object becomes one record.",
+                "Single top-level objects are wrapped in a 1-element array for consistent tabular output.",
                 "For accurate schema annotation, register a specific parser for this source type.",
             ],
         )

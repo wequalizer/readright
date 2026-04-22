@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -138,6 +141,11 @@ class StripeParser(BaseParser):
                 "Disputed charges may show status='Disputed' with amount_refunded=0 until the dispute resolves.",
                 "created_at and transfer_date are UTC — convert to local timezone before comparing with bank statements.",
             ],
+            notes=[
+                "Stripe API uses amounts in cents (smallest currency unit), but CSV exports already use decimal notation.",
+                "Test mode transactions (livemode=false / mode='test') may appear in exports alongside live data.",
+                "Disputed and refunded transactions each get their own separate rows rather than modifying the original charge row.",
+            ],
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
@@ -187,7 +195,8 @@ class StripeParser(BaseParser):
             return None
         try:
             return Decimal(raw)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            logger.warning("Stripe: could not parse amount '%s', defaulting to None", raw)
             return None
 
     def _parse_datetime(self, raw: str) -> str:

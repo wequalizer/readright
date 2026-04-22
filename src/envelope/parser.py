@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
 
 from envelope.envelope import ContextEnvelope, SchemaAnnotation
 
@@ -21,6 +20,18 @@ class ParseResult:
 
 class BaseParser(ABC):
     """Every source type implements this."""
+
+    # Default encoding fallback chain — subclasses can override _ENCODINGS
+    _ENCODINGS = ("utf-8-sig", "utf-8", "latin-1", "cp1252")
+
+    def _decode(self, content: bytes) -> str | None:
+        """Decode bytes trying multiple encodings. Returns None if all fail."""
+        for enc in self._ENCODINGS:
+            try:
+                return content.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return None
 
     @abstractmethod
     def source_type(self) -> str:
@@ -48,10 +59,24 @@ class BaseParser(ABC):
         ...
 
     def detect_encoding(self, content: bytes) -> str:
-        """Detect text encoding."""
+        """Detect text encoding. Tries UTF-8 first (handles emoji, most modern files),
+        falls back to chardet only if UTF-8 fails."""
+        # UTF-8 first — covers 95%+ of modern files and handles emoji correctly.
+        # chardet often misdetects UTF-8 with emoji as Windows-125x.
+        try:
+            content[:4096].decode("utf-8-sig")
+            return "utf-8-sig"
+        except UnicodeDecodeError:
+            pass
+        try:
+            content[:4096].decode("utf-8")
+            return "utf-8"
+        except UnicodeDecodeError:
+            pass
+        # Fall back to chardet for legacy encodings
         try:
             import chardet
-            result = chardet.detect(content)
+            result = chardet.detect(content[:4096])
             return result.get("encoding", "utf-8") or "utf-8"
         except ImportError:
             return "utf-8"

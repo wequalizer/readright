@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -198,7 +201,8 @@ class VenmoParser(BaseParser):
         try:
             value = Decimal(raw)
             return -value if negative else value
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            logger.warning("Venmo: could not parse amount '%s', defaulting to None", raw)
             return None
 
     def _parse_datetime(self, raw: str) -> str | None:

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -97,8 +100,8 @@ def _parse_ynab_amount(raw: str) -> Decimal:
 
     try:
         return Decimal(cleaned)
-    except InvalidOperation:
-        return Decimal("0")
+    except (InvalidOperation, Exception):
+        raise ValueError(f"YNAB: could not parse amount '{raw.strip()}'")
 
 
 class YNABParser(BaseParser):

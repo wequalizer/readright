@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime
+import logging
+from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -116,6 +119,11 @@ class PayPalParser(BaseParser):
                 "Headers can be in Dutch or English depending on PayPal account language.",
                 "Empty 'Naam'/'Name' field usually means it's an internal PayPal transfer (bank funding, currency conversion).",
             ],
+            notes=[
+                "Dutch PayPal exports use completely different column headers than English ones (e.g. 'Bedrag' vs 'Gross').",
+                "The PayPal balance currency may differ from the transaction currency when multi-currency is enabled.",
+                "Refunds appear as separate positive-amount rows, not as reversals on the original transaction.",
+            ],
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
@@ -184,8 +192,8 @@ class PayPalParser(BaseParser):
             raw = raw.replace(",", ".")
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"PayPal: could not parse amount '{raw}'")
 
     def _parse_row(self, row: dict, col_lookup: dict) -> dict:
         # Date: DD-MM-YYYY

@@ -11,6 +11,19 @@ from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
 from envelope.registry import registry
 
+# Pre-compiled date patterns — used in _looks_like_date and _detect_date_format
+_DATE_PATTERNS = [
+    re.compile(r"^\d{4}[-/]\d{2}[-/]\d{2}$"),
+    re.compile(r"^\d{2}[-/]\d{2}[-/]\d{4}$"),
+    re.compile(r"^\d{2}[-/]\d{2}[-/]\d{2}$"),
+    re.compile(r"^\d{8}$"),
+]
+
+_FMT_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_FMT_DASH_DMY = re.compile(r"^\d{2}-\d{2}-\d{4}$")
+_FMT_SLASH_DMY = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+_FMT_COMPACT = re.compile(r"^\d{8}$")
+
 
 class GenericCSVParser(BaseParser):
     """Fallback parser for unknown CSV files.
@@ -59,6 +72,11 @@ class GenericCSVParser(BaseParser):
             conventions=[
                 "This is a generic CSV parse. Column types are inferred from data, not from a known schema.",
                 "Type inference is best-effort: date, numeric, and string types are detected from values.",
+                "Column types are auto-inferred and may be wrong — verify before relying on them.",
+                "Empty string values may represent null or missing data — check context before interpreting.",
+                "The delimiter is auto-detected from comma, semicolon, tab, and pipe characters.",
+                "Date columns are detected by pattern matching but not validated — ambiguous formats (e.g. 01/02/03) may be misinterpreted.",
+                "Numeric columns containing currency symbols (€$£) or percentage signs are stripped to bare numbers.",
                 "For accurate schema annotation, register a specific parser for this source type.",
             ],
         )
@@ -172,32 +190,39 @@ class GenericCSVParser(BaseParser):
         return winner, fmt
 
     def _looks_like_date(self, val: str) -> bool:
-        date_patterns = [
-            r"^\d{4}[-/]\d{2}[-/]\d{2}$",
-            r"^\d{2}[-/]\d{2}[-/]\d{4}$",
-            r"^\d{2}[-/]\d{2}[-/]\d{2}$",
-            r"^\d{8}$",
-        ]
-        return any(re.match(p, val) for p in date_patterns)
+        return any(p.match(val) for p in _DATE_PATTERNS)
 
     def _looks_like_number(self, val: str) -> bool:
-        cleaned = val.replace(",", ".").replace(" ", "").lstrip("-+").lstrip("€$£")
+        cleaned = val.replace(" ", "").lstrip("-+").lstrip("€$£")
         if not cleaned:
             return False
+        # Try as-is first (handles plain numbers and US decimals like 3.14)
         try:
             float(cleaned)
+            return True
+        except ValueError:
+            pass
+        # US-style thousands: 1,234.56 → strip commas
+        try:
+            float(cleaned.replace(",", ""))
+            return True
+        except ValueError:
+            pass
+        # EU-style: 1.234,56 → strip dots, comma→dot
+        try:
+            float(cleaned.replace(".", "").replace(",", "."))
             return True
         except ValueError:
             return False
 
     def _detect_date_format(self, val: str) -> str | None:
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+        if _FMT_ISO.match(val):
             return "YYYY-MM-DD"
-        if re.match(r"^\d{2}-\d{2}-\d{4}$", val):
+        if _FMT_DASH_DMY.match(val):
             return "DD-MM-YYYY (or MM-DD-YYYY)"
-        if re.match(r"^\d{2}/\d{2}/\d{4}$", val):
+        if _FMT_SLASH_DMY.match(val):
             return "DD/MM/YYYY (or MM/DD/YYYY)"
-        if re.match(r"^\d{8}$", val):
+        if _FMT_COMPACT.match(val):
             return "YYYYMMDD"
         return None
 

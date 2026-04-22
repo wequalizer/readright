@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -175,6 +178,11 @@ class ABNAMROParser(BaseParser):
                 "Encoding is typically UTF-8; BOM may be present. Falls back to latin-1/cp1252 for older files.",
                 "SEPA structured remittance data is sometimes embedded in description fields using /REMI/ or /EV/ tags — no guarantee of consistent structure.",
             ],
+            notes=[
+                "ABN AMRO is one of the three major Dutch banks (alongside ING and Rabobank).",
+                "Description fields are split across three columns (description1, description2, description3) and must be concatenated.",
+                "Mutation codes in descriptions follow Dutch banking standards including SEPA codes like /TRTP/, /IBAN/, /NAME/.",
+            ],
         )
 
     def parse(self, content: bytes, filename: str) -> ParseResult:
@@ -300,8 +308,8 @@ class ABNAMROParser(BaseParser):
             raw = raw.replace(",", ".")
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"ABN AMRO: could not parse amount '{raw}'")
 
     def _decode(self, content: bytes) -> str | None:
         for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:

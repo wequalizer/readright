@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -100,7 +103,8 @@ def _parse_dutch_decimal(value: str) -> Decimal | None:
     cleaned = cleaned.replace(".", "").replace(",", ".")
     try:
         return Decimal(cleaned)
-    except InvalidOperation:
+    except (InvalidOperation, Exception):
+        logger.warning("Exact Online: could not parse decimal '%s', defaulting to None", value.strip())
         return None
 
 

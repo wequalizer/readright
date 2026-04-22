@@ -129,7 +129,6 @@ class GoogleContactsParser(BaseParser):
 
     def _parse_row(self, row: dict, fieldnames: list[str]) -> dict:
         """Parse a single Google Contacts row into normalized format."""
-        import json
 
         def get(key: str) -> str:
             return (row.get(key) or "").strip()

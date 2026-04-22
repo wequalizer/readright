@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -398,8 +401,8 @@ class TriodosParser(BaseParser):
         raw = sign + raw
         try:
             return Decimal(raw)
-        except InvalidOperation:
-            return Decimal("0")
+        except (InvalidOperation, Exception):
+            raise ValueError(f"Triodos: could not parse amount '{sign + raw}'")
 
     def _decode(self, content: bytes) -> str | None:
         for enc in ["utf-8-sig", "utf-8", "latin-1", "cp1252"]:

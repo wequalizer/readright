@@ -269,7 +269,7 @@ class MonzoBankParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row)
+                parsed = self._parse_row(row, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -284,7 +284,7 @@ class MonzoBankParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _parse_row(self, row: dict) -> dict:
+    def _parse_row(self, row: dict, warnings: list) -> dict:
         # Normalize all keys
         row = {k.strip().strip('"') if k else k: v.strip().strip('"') if v else v
                for k, v in row.items() if k}
@@ -294,38 +294,48 @@ class MonzoBankParser(BaseParser):
         tx_date = self._parse_date(raw_date)
 
         # Amount: signed
-        raw_amount = row.get("Amount", "0").replace(",", "")
+        raw_amount_orig = row.get("Amount", "0")
+        raw_amount = raw_amount_orig.replace(",", "")
         try:
             amount = Decimal(raw_amount)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse amount '{raw_amount_orig}', defaulting to 0")
             amount = Decimal("0")
 
         is_debit = amount < 0
 
         # Local amount
-        raw_local = row.get("Local amount", "").replace(",", "")
+        raw_local_orig = row.get("Local amount", "")
+        raw_local = raw_local_orig.replace(",", "")
         try:
             local_amount = Decimal(raw_local) if raw_local else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse local amount '{raw_local_orig}', defaulting to None")
             local_amount = None
 
         # Money Out / Money In
-        raw_out = row.get("Money Out", "").replace(",", "")
-        raw_in = row.get("Money In", "").replace(",", "")
+        raw_out_orig = row.get("Money Out", "")
+        raw_out = raw_out_orig.replace(",", "")
+        raw_in_orig = row.get("Money In", "")
+        raw_in = raw_in_orig.replace(",", "")
         try:
             money_out = Decimal(raw_out) if raw_out else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse 'Money Out' '{raw_out_orig}', defaulting to None")
             money_out = None
         try:
             money_in = Decimal(raw_in) if raw_in else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse 'Money In' '{raw_in_orig}', defaulting to None")
             money_in = None
 
         # Balance
-        raw_balance = row.get("Balance", "").replace(",", "")
+        raw_balance_orig = row.get("Balance", "")
+        raw_balance = raw_balance_orig.replace(",", "")
         try:
             balance = Decimal(raw_balance) if raw_balance else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse balance '{raw_balance_orig}', defaulting to None")
             balance = None
 
         return {

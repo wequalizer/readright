@@ -167,7 +167,7 @@ class BofABankParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row)
+                parsed = self._parse_row(row, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -182,25 +182,29 @@ class BofABankParser(BaseParser):
         )
         return ParseResult(success=True, envelope=envelope, warnings=warnings)
 
-    def _parse_row(self, row: dict) -> dict:
+    def _parse_row(self, row: dict, warnings: list) -> dict:
         # Date: MM/DD/YYYY
         raw_date = row.get("Date", "").strip().strip('"')
         tx_date = self._parse_date(raw_date)
 
         # Amount: signed, dot decimal, may have commas as thousand separators
-        raw_amount = row.get("Amount", "0").strip().strip('"').replace(",", "")
+        raw_amount_orig = row.get("Amount", "0").strip().strip('"')
+        raw_amount = raw_amount_orig.replace(",", "")
         try:
             amount = Decimal(raw_amount)
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse amount '{raw_amount_orig}', defaulting to 0")
             amount = Decimal("0")
 
         is_debit = amount < 0
 
         # Running balance
-        raw_balance = row.get("Running Bal.", "").strip().strip('"').replace(",", "")
+        raw_balance_orig = row.get("Running Bal.", "").strip().strip('"')
+        raw_balance = raw_balance_orig.replace(",", "")
         try:
             balance = Decimal(raw_balance) if raw_balance else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse running balance '{raw_balance_orig}', defaulting to None")
             balance = None
 
         return {

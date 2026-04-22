@@ -176,7 +176,7 @@ class HSBCBankParser(BaseParser):
 
         for i, row in enumerate(reader):
             try:
-                parsed = self._parse_row(row, is_split_format)
+                parsed = self._parse_row(row, is_split_format, warnings)
                 rows.append(parsed)
             except Exception as e:
                 warnings.append(f"Row {i + 1}: {e}")
@@ -203,7 +203,7 @@ class HSBCBankParser(BaseParser):
                     return i
         return None
 
-    def _parse_row(self, row: dict, is_split_format: bool) -> dict:
+    def _parse_row(self, row: dict, is_split_format: bool, warnings: list) -> dict:
         # Normalize header names: strip quotes and whitespace
         row = {k.strip().strip('"'): v.strip().strip('"') for k, v in row.items() if k}
 
@@ -213,15 +213,19 @@ class HSBCBankParser(BaseParser):
 
         if is_split_format:
             # Paid out = positive debit, Paid in = positive credit
-            raw_out = row.get("Paid out", "").replace(",", "")
-            raw_in = row.get("Paid in", "").replace(",", "")
+            raw_out_orig = row.get("Paid out", "")
+            raw_out = raw_out_orig.replace(",", "")
+            raw_in_orig = row.get("Paid in", "")
+            raw_in = raw_in_orig.replace(",", "")
             try:
                 paid_out = Decimal(raw_out) if raw_out else None
-            except InvalidOperation:
+            except (InvalidOperation, Exception):
+                warnings.append(f"Row {len(warnings)+1}: could not parse 'Paid out' '{raw_out_orig}', defaulting to None")
                 paid_out = None
             try:
                 paid_in = Decimal(raw_in) if raw_in else None
-            except InvalidOperation:
+            except (InvalidOperation, Exception):
+                warnings.append(f"Row {len(warnings)+1}: could not parse 'Paid in' '{raw_in_orig}', defaulting to None")
                 paid_in = None
 
             if paid_out is not None and paid_out != 0:
@@ -234,20 +238,24 @@ class HSBCBankParser(BaseParser):
                 amount = Decimal("0")
                 is_debit = False
         else:
-            raw_amount = row.get("Amount", "0").replace(",", "")
+            raw_amount_orig = row.get("Amount", "0")
+            raw_amount = raw_amount_orig.replace(",", "")
             try:
                 amount = Decimal(raw_amount)
-            except InvalidOperation:
+            except (InvalidOperation, Exception):
+                warnings.append(f"Row {len(warnings)+1}: could not parse amount '{raw_amount_orig}', defaulting to 0")
                 amount = Decimal("0")
             is_debit = amount < 0
             paid_out = abs(amount) if is_debit else None
             paid_in = amount if not is_debit else None
 
         # Balance (optional)
-        raw_balance = row.get("Balance", "").replace(",", "")
+        raw_balance_orig = row.get("Balance", "")
+        raw_balance = raw_balance_orig.replace(",", "")
         try:
             balance = Decimal(raw_balance) if raw_balance else None
-        except InvalidOperation:
+        except (InvalidOperation, Exception):
+            warnings.append(f"Row {len(warnings)+1}: could not parse balance '{raw_balance_orig}', defaulting to None")
             balance = None
 
         return {

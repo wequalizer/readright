@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, InvalidOperation
+
+logger = logging.getLogger(__name__)
 
 from envelope.envelope import ContextEnvelope, FieldAnnotation, SchemaAnnotation
 from envelope.parser import BaseParser, ParseResult
@@ -94,8 +97,8 @@ def _parse_amount(raw: str) -> Decimal:
     cleaned = raw.strip().replace(",", "")
     try:
         return Decimal(cleaned)
-    except InvalidOperation:
-        return Decimal("0")
+    except (InvalidOperation, Exception):
+        raise ValueError(f"QIF: could not parse amount '{raw.strip()}'")
 
 
 class QIFParser(BaseParser):
